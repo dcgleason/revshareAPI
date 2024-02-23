@@ -1,30 +1,22 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const nodemailer = require('nodemailer');
+const twilio = require('twilio');
 
 const app = express();
 const port = 3000;
 
 app.use(bodyParser.json());
 
-// Configure your SMTP settings for nodemailer
-const transporter = nodemailer.createTransport({
-  host: 'smtp.example.com', // Your SMTP host
-  port: 587, // Your SMTP port
-  secure: false, // True for 465, false for other ports
-  auth: {
-    user: 'your_email@example.com', // Your SMTP username
-    pass: 'your_password', // Your SMTP password
-  },
-});
+// Twilio setup
+const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-// Function to create Stripe Express account and send email
-async function createAccountAndSendEmail(email) {
+// Function to create Stripe Express account and send text message
+async function createAccountAndSendText(phoneNumber) {
   try {
     const account = await stripe.accounts.create({
       type: 'express',
-      email: email,
+      email: 'placeholder@example.com', // Since we're focusing on phone numbers, you might need a placeholder email
       capabilities: {
         card_payments: {requested: true},
         transfers: {requested: true},
@@ -38,32 +30,30 @@ async function createAccountAndSendEmail(email) {
       type: 'account_onboarding',
     });
 
-    // Sending the email
-    const mailOptions = {
-      from: '"Your Name" <your_email@example.com>', // Sender address
-      to: email, // List of receivers
-      subject: 'Set up your Stripe account', // Subject line
-      text: `Please set up your Stripe account by following this link: ${accountLink.url}`, // Plain text body
-    };
+    // Sending the text message
+    const message = await twilioClient.messages.create({
+      body: `Please set up your Stripe account by following this link: ${accountLink.url}`,
+      from: process.env.TWILIO_PHONE_NUMBER, // Your Twilio phone number
+      to: phoneNumber,
+    });
 
-    await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${email}`);
+    console.log(`Message sent to ${phoneNumber}: ${message.sid}`);
   } catch (error) {
-    console.error(`Failed to create account or send email for ${email}:`, error);
+    console.error(`Failed to create account or send text for ${phoneNumber}:`, error);
     throw error; // Rethrow to handle it in the calling function
   }
 }
 
-// Endpoint to receive a list of emails and process them
+// Endpoint to receive a list of phone numbers and process them
 app.post('/send-invites', async (req, res) => {
-  const emails = req.body.emails;
-  if (!emails || emails.length === 0) {
-    return res.status(400).send({ message: 'No emails provided' });
+  const phoneNumbers = req.body.phoneNumbers;
+  if (!phoneNumbers || phoneNumbers.length === 0) {
+    return res.status(400).send({ message: 'No phone numbers provided' });
   }
 
   try {
-    for (const email of emails) {
-      await createAccountAndSendEmail(email); // Process each email
+    for (const phoneNumber of phoneNumbers) {
+      await createAccountAndSendText(phoneNumber); // Process each phone number
     }
     res.send({ message: 'Invitations sent successfully' });
   } catch (error) {
